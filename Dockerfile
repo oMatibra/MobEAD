@@ -1,8 +1,5 @@
-# Indicando imagem base
-
-FROM nginx:alpine
-
-# Copia arquivos da aplicação web para pasta de publicação do Nginx
-COPY . /usr/share/nginx/html/
-COPY Web.config /etc/nginx/conf.d/Web.config
-COPY index.html /usr/share/nginx/html/index.html
+FROM nginx:stable-alpine
+COPY index.html kickstrap.css mine.css /usr/share/nginx/html/
+COPY Scripts/ /usr/share/nginx/html/Scripts/
+COPY Kickstrap/ /usr/share/nginx/html/Kickstrap/
+EXPOSE 80
