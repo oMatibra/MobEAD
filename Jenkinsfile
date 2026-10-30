@@ -9,7 +9,6 @@ pipeline {
 
     environment {
         PATH = "C:\\Users\\matib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;${env.PATH}"
-        
         IMAGE_NAME = 'mobead-matibra'
         DOCKER_NETWORK = 'mobead_cicd'
     }
@@ -40,7 +39,7 @@ pipeline {
             steps {
                 withSonarQubeEnv('sonarqube-local') {
                     bat '''@echo off
-                        docker run --rm --mount "type=bind,source=%CD%,target=/usr/src" --workdir /usr/src --env "SONAR_TOKEN=%SONAR_AUTH_TOKEN%" sonarsource/sonar-scanner-cli -Dsonar.host.url=http://host.docker.internal:9000
+                        docker run --rm --mount "type=bind,source=%CD%,target=/usr/src" --workdir /usr/src --env "SONAR_TOKEN=%SONAR_AUTH_TOKEN%" sonarsource/sonar-scanner-cli -Dsonar.host.url=http://host.docker.internal:9000 -Dsonar.token=%SONAR_AUTH_TOKEN%
                         if errorlevel 1 exit /b 1
                     '''
                 }
@@ -70,7 +69,11 @@ pipeline {
                     docker network inspect "%DOCKER_NETWORK%" >nul 2>&1
                     if errorlevel 1 docker network create "%DOCKER_NETWORK%"
                     if errorlevel 1 exit /b 1
-                    docker container rm -f mobead-dev >nul 2>&1
+                    docker container inspect mobead-dev >nul 2>&1
+                    if not errorlevel 1 (
+                        docker container rm -f mobead-dev
+                        if errorlevel 1 exit /b 1
+                    )
                     docker run -d --restart unless-stopped --name mobead-dev --network "%DOCKER_NETWORK%" -p 8081:80 "%IMAGE_NAME%:%BUILD_NUMBER%"
                     if errorlevel 1 exit /b 1
                 '''
@@ -103,7 +106,11 @@ pipeline {
         stage('09 - Deploy producao') {
             steps {
                 bat '''@echo off
-                    docker container rm -f mobead-prod >nul 2>&1
+                    docker container inspect mobead-prod >nul 2>&1
+                    if not errorlevel 1 (
+                        docker container rm -f mobead-prod
+                        if errorlevel 1 exit /b 1
+                    )
                     docker run -d --restart unless-stopped --name mobead-prod --network "%DOCKER_NETWORK%" -p 8082:80 "%IMAGE_NAME%:%BUILD_NUMBER%"
                     if errorlevel 1 exit /b 1
                 '''
@@ -129,12 +136,12 @@ pipeline {
         always {
             bat '''@echo off
                 if not exist evidencias mkdir evidencias
-                echo Pipeline: MATIBRA - CI/CD MobEAD > evidencias\resumo-execucao.txt
-                echo Build: %BUILD_NUMBER% >> evidencias\resumo-execucao.txt
-                git rev-parse --short HEAD >> evidencias\resumo-execucao.txt 2>nul
-                docker ps --filter name=mobead-dev --filter name=mobead-prod --format "{{.Names}} | {{.Image}} | {{.Status}} | {{.Ports}}" >> evidencias\resumo-execucao.txt 2>nul
-                docker logs --tail 40 mobead-dev > evidencias\dev-container.log 2>&1
-                docker logs --tail 40 mobead-prod > evidencias\prod-container.log 2>&1
+                echo Pipeline: MATIBRA - CI/CD MobEAD > evidencias/resumo-execucao.txt
+                echo Build: %BUILD_NUMBER% >> evidencias/resumo-execucao.txt
+                git rev-parse --short HEAD >> evidencias/resumo-execucao.txt 2>nul
+                docker ps --filter name=mobead-dev --filter name=mobead-prod --format "{{.Names}} | {{.Image}} | {{.Status}} | {{.Ports}}" >> evidencias/resumo-execucao.txt 2>nul
+                docker logs --tail 40 mobead-dev > evidencias/dev-container.log 2>&1
+                docker logs --tail 40 mobead-prod > evidencias/prod-container.log 2>&1
                 exit /b 0
             '''
             archiveArtifacts artifacts: 'evidencias/*.txt,evidencias/*.log,tests.tap,sonar-tests.xml,smoke-*.html', allowEmptyArchive: true
