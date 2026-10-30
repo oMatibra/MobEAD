@@ -1,6 +1,7 @@
 pipeline {
     agent {
         node {
+            label 'built-in'
             // Volume compartilhado somente para os runners de testes e analise.
             customWorkspace '/workspace/mobead'
         }
