@@ -14,6 +14,8 @@ pipeline {
     }
 
     environment {
+        PATH = "C:\\Users\\matib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;${env.PATH}"
+        
         IMAGE_NAME = 'mobead-matibra'
         DOCKER_NETWORK = 'mobead_cicd'
         WORKSPACE_VOLUME = 'mobead_workspace'
