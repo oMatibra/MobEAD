@@ -1,11 +1,5 @@
 pipeline {
-    agent {
-        node {
-            label 'built-in'
-            // Volume compartilhado somente para os runners de testes e analise.
-            customWorkspace '/workspace/mobead'
-        }
-    }
+    agent { label 'built-in' }
 
     options {
         timestamps()
@@ -18,31 +12,26 @@ pipeline {
         
         IMAGE_NAME = 'mobead-matibra'
         DOCKER_NETWORK = 'mobead_cicd'
-        WORKSPACE_VOLUME = 'mobead_workspace'
     }
 
     stages {
         stage('01 - GitHub / Checkout') {
             steps {
-                echo 'Pipeline MATIBRA - CI/CD MobEAD - Unidade 2'
+                echo 'Pipeline MATIBRA - CI/CD MobEAD - Windows'
                 checkout scm
-                sh 'git log -1 --format="Commit: %h | Autor: %an | Mensagem: %s"'
+                bat 'git log -1 --format="Commit: %%h | Autor: %%an | Mensagem: %%s"'
+                bat 'docker version'
             }
         }
 
         stage('02 - Testes automatizados') {
             steps {
-                sh '''#!/bin/sh
-                    set -eu
-                    docker run --rm \
-                        --volume "$WORKSPACE_VOLUME:/workspace:ro" \
-                        --workdir /workspace/mobead \
-                        node:22-alpine node --test --test-reporter=tap mobead.test.cjs > tests.tap
-                    cat tests.tap
-                    docker run --rm \
-                        --volume "$WORKSPACE_VOLUME:/workspace" \
-                        --workdir /workspace/mobead \
-                        node:22-alpine node tap-to-sonar.cjs tests.tap sonar-tests.xml
+                bat '''@echo off
+                    docker run --rm --mount "type=bind,source=%CD%,target=/workspace" --workdir /workspace node:22-alpine node --test --test-reporter=tap mobead.test.cjs > tests.tap
+                    if errorlevel 1 exit /b 1
+                    type tests.tap
+                    docker run --rm --mount "type=bind,source=%CD%,target=/workspace" --workdir /workspace node:22-alpine node tap-to-sonar.cjs tests.tap sonar-tests.xml
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
@@ -50,17 +39,9 @@ pipeline {
         stage('03 - Analise SonarQube') {
             steps {
                 withSonarQubeEnv('sonarqube-local') {
-                    sh '''#!/bin/sh
-                        set -eu
-                        export SONAR_TOKEN="$SONAR_AUTH_TOKEN"
-                        docker run --rm \
-                            --user 0:0 \
-                            --network "$DOCKER_NETWORK" \
-                            --volume "$WORKSPACE_VOLUME:/usr/src" \
-                            --workdir /usr/src/mobead \
-                            --env SONAR_HOST_URL \
-                            --env SONAR_TOKEN \
-                            sonarsource/sonar-scanner-cli
+                    bat '''@echo off
+                        docker run --rm --mount "type=bind,source=%CD%,target=/usr/src" --workdir /usr/src --env "SONAR_TOKEN=%SONAR_AUTH_TOKEN%" sonarsource/sonar-scanner-cli -Dsonar.host.url=http://host.docker.internal:9000
+                        if errorlevel 1 exit /b 1
                     '''
                 }
             }
@@ -76,37 +57,36 @@ pipeline {
 
         stage('05 - Build imagem Docker') {
             steps {
-                sh '''#!/bin/sh
-                    set -eu
-                    docker build -t "$IMAGE_NAME:$BUILD_NUMBER" .
+                bat '''@echo off
+                    docker build -t "%IMAGE_NAME%:%BUILD_NUMBER%" .
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
 
         stage('06 - Deploy desenvolvimento') {
             steps {
-                sh '''#!/bin/sh
-                    set -eu
-                    docker container rm -f mobead-dev 2>/dev/null || true
-                    docker run -d --restart unless-stopped \
-                        --name mobead-dev \
-                        --network "$DOCKER_NETWORK" \
-                        -p 8081:80 \
-                        "$IMAGE_NAME:$BUILD_NUMBER"
+                bat '''@echo off
+                    docker network inspect "%DOCKER_NETWORK%" >nul 2>&1
+                    if errorlevel 1 docker network create "%DOCKER_NETWORK%"
+                    if errorlevel 1 exit /b 1
+                    docker container rm -f mobead-dev >nul 2>&1
+                    docker run -d --restart unless-stopped --name mobead-dev --network "%DOCKER_NETWORK%" -p 8081:80 "%IMAGE_NAME%:%BUILD_NUMBER%"
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
 
         stage('07 - Smoke test desenvolvimento') {
             steps {
-                sh '''#!/bin/sh
-                    set -eu
-                    docker run --rm --network "$DOCKER_NETWORK" \
-                        curlimages/curl:latest -fsS --retry 12 --retry-all-errors --retry-delay 2 http://mobead-dev/ \
-                        | grep -Fq 'MobEAD - UNYLEYA - Engenharia DevOps'
-                    docker run --rm --network "$DOCKER_NETWORK" \
-                        curlimages/curl:latest -fsS --retry 12 --retry-all-errors --retry-delay 2 -o /dev/null http://mobead-dev/Scripts/mobEAD.js
-                    echo 'Smoke test DEV: OK'
+                bat '''@echo off
+                    docker run --rm --network "%DOCKER_NETWORK%" curlimages/curl:latest -fsS --retry 12 --retry-all-errors --retry-delay 2 http://mobead-dev/ > smoke-dev.html
+                    if errorlevel 1 exit /b 1
+                    findstr /C:"MobEAD - UNYLEYA - Engenharia DevOps" smoke-dev.html >nul
+                    if errorlevel 1 exit /b 1
+                    docker run --rm --network "%DOCKER_NETWORK%" curlimages/curl:latest -fsS --retry 12 --retry-all-errors --retry-delay 2 -o /dev/null http://mobead-dev/Scripts/mobEAD.js
+                    if errorlevel 1 exit /b 1
+                    echo Smoke test DEV: OK
                 '''
             }
         }
@@ -122,28 +102,24 @@ pipeline {
 
         stage('09 - Deploy producao') {
             steps {
-                sh '''#!/bin/sh
-                    set -eu
-                    docker container rm -f mobead-prod 2>/dev/null || true
-                    docker run -d --restart unless-stopped \
-                        --name mobead-prod \
-                        --network "$DOCKER_NETWORK" \
-                        -p 8082:80 \
-                        "$IMAGE_NAME:$BUILD_NUMBER"
+                bat '''@echo off
+                    docker container rm -f mobead-prod >nul 2>&1
+                    docker run -d --restart unless-stopped --name mobead-prod --network "%DOCKER_NETWORK%" -p 8082:80 "%IMAGE_NAME%:%BUILD_NUMBER%"
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
 
         stage('10 - Smoke test producao') {
             steps {
-                sh '''#!/bin/sh
-                    set -eu
-                    docker run --rm --network "$DOCKER_NETWORK" \
-                        curlimages/curl:latest -fsS --retry 12 --retry-all-errors --retry-delay 2 http://mobead-prod/ \
-                        | grep -Fq 'MobEAD - UNYLEYA - Engenharia DevOps'
-                    docker run --rm --network "$DOCKER_NETWORK" \
-                        curlimages/curl:latest -fsS --retry 12 --retry-all-errors --retry-delay 2 -o /dev/null http://mobead-prod/Scripts/mobEAD.js
-                    echo 'Smoke test PROD: OK'
+                bat '''@echo off
+                    docker run --rm --network "%DOCKER_NETWORK%" curlimages/curl:latest -fsS --retry 12 --retry-all-errors --retry-delay 2 http://mobead-prod/ > smoke-prod.html
+                    if errorlevel 1 exit /b 1
+                    findstr /C:"MobEAD - UNYLEYA - Engenharia DevOps" smoke-prod.html >nul
+                    if errorlevel 1 exit /b 1
+                    docker run --rm --network "%DOCKER_NETWORK%" curlimages/curl:latest -fsS --retry 12 --retry-all-errors --retry-delay 2 -o /dev/null http://mobead-prod/Scripts/mobEAD.js
+                    if errorlevel 1 exit /b 1
+                    echo Smoke test PROD: OK
                 '''
             }
         }
@@ -151,20 +127,17 @@ pipeline {
 
     post {
         always {
-            sh '''#!/bin/sh
-                mkdir -p evidencias
-                {
-                    echo "Pipeline: MATIBRA - CI/CD MobEAD"
-                    echo "Build: $BUILD_NUMBER"
-                    echo "Commit: $(git rev-parse --short HEAD 2>/dev/null || echo indisponivel)"
-                    echo 'Containers de desenvolvimento e producao:'
-                    docker ps --filter name=mobead-dev --filter name=mobead-prod \
-                        --format '{{.Names}} | {{.Image}} | {{.Status}} | {{.Ports}}' || true
-                } > evidencias/resumo-execucao.txt
-                docker logs --tail 40 mobead-dev > evidencias/dev-container.log 2>&1 || true
-                docker logs --tail 40 mobead-prod > evidencias/prod-container.log 2>&1 || true
+            bat '''@echo off
+                if not exist evidencias mkdir evidencias
+                echo Pipeline: MATIBRA - CI/CD MobEAD > evidencias\resumo-execucao.txt
+                echo Build: %BUILD_NUMBER% >> evidencias\resumo-execucao.txt
+                git rev-parse --short HEAD >> evidencias\resumo-execucao.txt 2>nul
+                docker ps --filter name=mobead-dev --filter name=mobead-prod --format "{{.Names}} | {{.Image}} | {{.Status}} | {{.Ports}}" >> evidencias\resumo-execucao.txt 2>nul
+                docker logs --tail 40 mobead-dev > evidencias\dev-container.log 2>&1
+                docker logs --tail 40 mobead-prod > evidencias\prod-container.log 2>&1
+                exit /b 0
             '''
-            archiveArtifacts artifacts: 'evidencias/*.txt,evidencias/*.log,tests.tap,sonar-tests.xml', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'evidencias/*.txt,evidencias/*.log,tests.tap,sonar-tests.xml,smoke-*.html', allowEmptyArchive: true
         }
         success { echo 'PIPELINE MATIBRA: SUCESSO! DEV e PROD disponiveis.' }
         failure { echo 'PIPELINE MATIBRA: FALHA. Consulte Console Output no Jenkins.' }
