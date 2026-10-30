@@ -39,7 +39,14 @@ pipeline {
             steps {
                 withSonarQubeEnv('sonarqube-local') {
                     bat '''@echo off
-                        docker run --rm --mount "type=bind,source=%CD%,target=/usr/src" --workdir /usr/src --env "SONAR_TOKEN=%SONAR_AUTH_TOKEN%" sonarsource/sonar-scanner-cli -Dsonar.host.url=http://host.docker.internal:9000 -Dsonar.token=%SONAR_AUTH_TOKEN%
+                        docker run --rm ^
+                          --mount "type=bind,source=%CD%,target=/usr/src" ^
+                          --workdir /usr/src ^
+                          --env "SONAR_TOKEN=%SONAR_AUTH_TOKEN%" ^
+                          sonarsource/sonar-scanner-cli ^
+                          -Dsonar.host.url=http://host.docker.internal:9000 ^
+                          -Dsonar.scanner.metadataFilePath=/usr/src/.scannerwork/report-task.txt
+        
                         if errorlevel 1 exit /b 1
                     '''
                 }
