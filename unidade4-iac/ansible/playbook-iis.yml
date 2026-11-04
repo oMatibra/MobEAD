@@ -1,0 +1,110 @@
+---
+- name: Unidade 4 - Configurar IIS no Windows Server 2019 da AWS
+  hosts: windows
+  gather_facts: false
+
+  tasks:
+    - name: Garantir que a senha veio da variavel de ambiente do WSL
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'WINDOWS_ADMIN_PASSWORD') | length > 0
+        fail_msg: "Informe a senha com: read -rsp 'Senha: ' WINDOWS_ADMIN_PASSWORD; export WINDOWS_ADMIN_PASSWORD"
+        success_msg: "Senha disponivel apenas na sessao atual."
+      delegate_to: localhost
+      run_once: true
+      no_log: true
+
+    - name: Aguardar a inicializacao completa do WinRM HTTPS
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 5986
+        timeout: 300
+        sleep: 10
+      delegate_to: localhost
+
+    - name: Validar comunicacao WinRM com Windows Server
+      ansible.windows.win_ping:
+
+    - name: Instalar a funcao Web-Server (IIS) e ferramentas de administracao
+      ansible.windows.win_feature:
+        name: Web-Server
+        state: present
+        include_management_tools: true
+      register: iis_install
+
+    - name: Reiniciar o Windows caso a instalacao solicite
+      ansible.windows.win_reboot:
+        reboot_timeout: 1200
+      when: iis_install.reboot_required | default(false)
+
+    - name: Liberar HTTP 80 no Firewall do Windows
+      community.windows.win_firewall_rule:
+        name: UNIDADE4 - IIS HTTP 80
+        localport: '80'
+        action: allow
+        direction: in
+        protocol: tcp
+        enabled: true
+        state: present
+
+    - name: Iniciar e habilitar o servico W3SVC do IIS
+      ansible.windows.win_service:
+        name: W3SVC
+        start_mode: auto
+        state: started
+
+    - name: Publicar pagina de comprovacao no IIS
+      ansible.windows.win_copy:
+        dest: 'C:\inetpub\wwwroot\index.html'
+        content: |
+          <!doctype html>
+          <html lang="pt-BR">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>MobEAD | Unidade 4 | IaC</title>
+            <style>
+              body { background: #0c1512; color: #edf7ef; font: 18px Arial, sans-serif;
+                     display: grid; place-items: center; min-height: 100vh; margin: 0; }
+              main { border: 1px solid #39b77b; background: #17291f; border-radius: 14px;
+                     padding: 42px; max-width: 680px; text-align: center; }
+              h1 { color: #6de5a7; } code { color: #b7efcf; }
+            </style>
+          </head>
+          <body>
+            <main>
+              <h1>MobEAD - Unidade 4</h1>
+              <h2>Infraestrutura como Codigo (IaC)</h2>
+              <p>Windows Server 2019 provisionado por <strong>Terraform</strong>.</p>
+              <p>Servidor IIS instalado e configurado pelo <strong>Ansible</strong>.</p>
+              <p><code>Status: ONLINE | HTTP 200</code></p>
+            </main>
+          </body>
+          </html>
+
+    - name: Testar pagina IIS localmente com HTTP
+      ansible.windows.win_uri:
+        url: http://127.0.0.1/
+        method: GET
+        return_content: true
+        status_code: 200
+      register: site_response
+
+    - name: Confirmar que a resposta HTTP contem a pagina MobEAD
+      ansible.builtin.assert:
+        that:
+          - site_response.status_code == 200
+          - "'MobEAD' in site_response.content"
+        success_msg: "IIS validado: HTTP 200 e conteudo MobEAD presente."
+
+    - name: Exibir resumo de servico e recurso instalado
+      ansible.windows.win_shell: |
+        Write-Output ('Windows: ' + [Environment]::OSVersion.VersionString)
+        Write-Output ('IIS: ' + (Get-WindowsFeature -Name Web-Server).InstallState)
+        Write-Output ('W3SVC: ' + (Get-Service W3SVC).Status)
+      register: verificacao_windows
+      changed_when: false
+
+    - name: Mostrar verificacao no log do Ansible
+      ansible.builtin.debug:
+        var: verificacao_windows.stdout_lines

@@ -1,0 +1,22 @@
+# Dados locais do Terraform e credenciais
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+**/terraform.tfvars
+**/terraform.tfvars.json
+**/crash.log
+**/crash.*.log
+**/override.tf
+**/override.tf.json
+**/*_override.tf
+**/*_override.tf.json
+# Manter .terraform.lock.hcl no controle de versao quando gerado.
+
+# Dados do laboratorio nao devem ir para repositorio publico
+ansible/inventory.ini
+*.pem
+*.ppk
+*.key
+*.pfx
+**/__pycache__/
